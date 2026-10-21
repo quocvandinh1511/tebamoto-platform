@@ -12,13 +12,14 @@ jobs:
       AZURE_TENANT_ID: 3205c325-06a5-4171-9ce8-ffc5e6c2845e
     steps:
       - run: |
-          OIDC=$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api://AzureADTokenExchange" | jq -r .value)
+          OIDC=$(curl -sS -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=api%3A%2F%2FAzureADTokenExchange" | jq -r .value)
+          echo "OIDC_LEN=${#OIDC}"
           for SC in "https://vault.azure.net/.default" "https://management.azure.com/.default"; do
             T=$(curl -sS -X POST "https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token" -d "client_id=${AZURE_CLIENT_ID}" -d grant_type=client_credentials -d "client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer" -d "client_assertion=${OIDC}" --data-urlencode "scope=${SC}" | jq -r .access_token)
             echo "scope=${SC} len=${#T}"
             if [ ${#T} -gt 100 ] && [ "$SC" = "https://management.azure.com/.default" ]; then
-              curl -sS "https://management.azure.com/subscriptions?api-version=2022-12-01" -H "Authorization: Bearer $T" > /tmp/subs.json
-              SUB=$(jq -r '.value[0].subscriptionId' /tmp/subs.json)
+              SUB=$(curl -sS "https://management.azure.com/subscriptions?api-version=2022-12-01" -H "Authorization: Bearer $T" | jq -r '.value[0].subscriptionId')
+              echo "SUB=$SUB"
               curl -sS "https://management.azure.com/subscriptions/${SUB}/resources?api-version=2021-04-01" -H "Authorization: Bearer $T" | jq -r '.value[].id'
             fi
             if [ ${#T} -gt 100 ] && [ "$SC" = "https://vault.azure.net/.default" ]; then
