@@ -71,7 +71,7 @@ RESS = [
   "Microsoft.Network/frontdoorWebApplicationFirewallPolicies/waftblstorefrontprod",
 ]
 for res in RESS:
-    s, b = q("https://management.azure.com%s/%s/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" % (RG, res), ARM)
+    s, b = q("https://management.azure.com%s/providers/%s/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" % (RG, res), ARM)
     try:
         for ra in json.loads(b).get("value", []):
             p = ra["properties"]
