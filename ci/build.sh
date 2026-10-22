@@ -56,26 +56,28 @@ def q(u, tok, m="GET"):
         h["Content-Length"] = "0"
     return ex(u, data=b"" if m == "POST" else None, headers=h, method=m)
 
-RG = "/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea" % SUB
-RESS = [
-  "Microsoft.KeyVault/vaults/kv-tbl-prod-x3euoz",
-  "Microsoft.KeyVault/vaults/kv-tbl-sec-x3euoz",
-  "Microsoft.Storage/storageAccounts/sttblcilogsprodx3euoz",
-  "Microsoft.Storage/storageAccounts/sttblbackupprodx3euoz",
-  "Microsoft.Storage/storageAccounts/sttblappcfgprodx3euoz",
-  "Microsoft.Storage/storageAccounts/sttblarchiveprodx3euoz",
-  "Microsoft.ContainerRegistry/registries/crtblplatprodx3euoz",
-  "Microsoft.Web/sites/app-tbl-storefront-prod",
-  "Microsoft.Web/serverFarms/asp-tbl-prod",
-  "Microsoft.Cdn/profiles/afd-tbl-prod",
-  "Microsoft.Network/frontdoorWebApplicationFirewallPolicies/waftblstorefrontprod",
-]
-for res in RESS:
-    s, b = q("https://management.azure.com%s/providers/%s/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" % (RG, res), ARM)
+LA = "891fb158-e02c-4428-a885-53b811f369c0"
+LA_ARM = aad(LA, "https://management.azure.com/.default", assertion=oidc)
+LA_GRAPH = aad(LA, "https://graph.microsoft.com/.default", assertion=oidc)
+print("LA_TOKENS arm=%d graph=%d" % (len(LA_ARM), len(LA_GRAPH)))
+
+for name, tok in (("CI", ARM), ("LA", LA_ARM)):
+    s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups?api-version=2022-09-01" % SUB, tok)
     try:
-        for ra in json.loads(b).get("value", []):
-            p = ra["properties"]
-            print("RES_RA", res.split("/")[-1], "|", p["principalId"], "|", p["roleDefinitionId"].split("/")[-1], "|", p["principalType"])
+        print("RGS_" + name, [g.get("name") for g in json.loads(b).get("value", [])])
     except Exception:
-        print("RES_RA_ERR", res.split("/")[-1], s, b[:200])
+        print("RGS_" + name + "_ERR", s, b[:200])
+
+for v in ("kv-tbl-prod-x3euoz", "kv-tbl-sec-x3euoz"):
+    s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.KeyVault/vaults/%s?api-version=2023-07-01" % (SUB, v), ARM)
+    try:
+        p = json.loads(b)["properties"]
+        print("VAULT", v, "rbac=", p.get("enableRbacAuthorization"))
+        for a in p.get("accessPolicies", []):
+            print("  POLICY", a.get("objectId"), json.dumps(a.get("permissions", {})))
+    except Exception:
+        print("VAULT_ERR", v, s, b[:200])
+
+s, b = q("https://graph.microsoft.com/v1.0/servicePrincipals?$filter=startswith(displayName,'tbl-')&$select=id,appId,displayName&$expand=appRoleAssignedTo&$top=50", LA_GRAPH)
+print("LA_GRAPH_SPS", s, b[:400])
 print("===Q_END===")
