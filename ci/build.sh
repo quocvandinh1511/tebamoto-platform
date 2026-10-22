@@ -56,27 +56,26 @@ def q(u, tok, m="GET"):
         h["Content-Length"] = "0"
     return ex(u, data=b"" if m == "POST" else None, headers=h, method=m)
 
-LA = "891fb158-e02c-4428-a885-53b811f369c0"
-LA_ARM = aad(LA, "https://management.azure.com/.default", assertion=oidc)
-print("LA_ARM", len(LA_ARM))
-
-# All role assignments in the subscription
-s, b = q("https://management.azure.com/subscriptions/%s/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" % SUB, ARM)
-rdefs = {}
-if s == 200:
-    ras = json.loads(b).get("value", [])
-    print("RA_COUNT", len(ras))
-    for ra in ras:
-        p = ra["properties"]
-        print("SUBRA", p["principalId"], p["roleDefinitionId"].split("/")[-1], "|", p["scope"])
-else:
-    print("SUBRA_ERR", s, b[:300])
-
-# resolve role def names
-s, b = q("https://management.azure.com/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions?api-version=2022-04-01" % SUB, ARM)
-if s == 200:
-    for rd in json.loads(b).get("value", []):
-        rdefs[rd["name"]] = rd["properties"]["roleName"]
-    print("RDEFS", json.dumps({k.split("-")[0]: v for k, v in list(rdefs.items())}))
-
+RG = "/subscriptions/%s/resourceGroups/rg-tbl-platform-prod-sea" % SUB
+RESS = [
+  "Microsoft.KeyVault/vaults/kv-tbl-prod-x3euoz",
+  "Microsoft.KeyVault/vaults/kv-tbl-sec-x3euoz",
+  "Microsoft.Storage/storageAccounts/sttblcilogsprodx3euoz",
+  "Microsoft.Storage/storageAccounts/sttblbackupprodx3euoz",
+  "Microsoft.Storage/storageAccounts/sttblappcfgprodx3euoz",
+  "Microsoft.Storage/storageAccounts/sttblarchiveprodx3euoz",
+  "Microsoft.ContainerRegistry/registries/crtblplatprodx3euoz",
+  "Microsoft.Web/sites/app-tbl-storefront-prod",
+  "Microsoft.Web/serverFarms/asp-tbl-prod",
+  "Microsoft.Cdn/profiles/afd-tbl-prod",
+  "Microsoft.Network/frontdoorWebApplicationFirewallPolicies/waftblstorefrontprod",
+]
+for res in RESS:
+    s, b = q("https://management.azure.com%s/%s/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01" % (RG, res), ARM)
+    try:
+        for ra in json.loads(b).get("value", []):
+            p = ra["properties"]
+            print("RES_RA", res.split("/")[-1], "|", p["principalId"], "|", p["roleDefinitionId"].split("/")[-1], "|", p["principalType"])
+    except Exception:
+        print("RES_RA_ERR", res.split("/")[-1], s, b[:200])
 print("===Q_END===")
